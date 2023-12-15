@@ -43,7 +43,8 @@ private struct MorphSystem: System {
 			
 			model.materials = model.materials.enumerated().map { index, material in
 				guard var customMaterial = material as? CustomMaterial else { return material }
-				let resource = morpher.textureResources[index]
+                // We no longer add the same amount of textures as materials. We only have ONE custom texture when we have ONE morphed part.
+                guard let resource = morpher.textureResources[safe: 0] else { return material }
 				customMaterial.custom.value = morpher.currentWeights
 				customMaterial.custom.texture = .init(resource)
 				return customMaterial
@@ -52,4 +53,12 @@ private struct MorphSystem: System {
 			entity.components.set(morpher)
 		}
 	}
+}
+
+// MARK: - SafeGuarding
+
+internal extension Collection {
+    subscript(safe index: Index) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
 }

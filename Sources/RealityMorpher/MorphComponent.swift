@@ -7,6 +7,9 @@ import SwiftUI
 
 /// Add this component to a `ModelEntity` to enable morph target (AKA shape key or blend shape) animations.
 public struct MorphComponent: Component {
+    
+    private static var morphPartID = "BODY"
+    
 	/// Debug options
 	public enum Option: String {
 		/// Display normals as vertex colors
@@ -35,55 +38,91 @@ public struct MorphComponent: Component {
 	///
 	/// - Throws: See ``Error`` for errors thrown from this initialiser
 	public init(entity: HasModel, targets: [ModelComponent], weights: MorphWeights = .zero, options: Set<Option> = []) throws {
+        
 		guard var model = entity.model else { throw Error.missingBaseMesh }
+        
 		guard 1...MorphEnvironment.maxTargetCount ~= targets.count else { throw Error.invalidNumberOfTargets }
-		guard Self.allTargets(targets, areTopologicallyIdenticalToModel: model) else {
-			throw Error.targetsNotTopologicallyIdentical
-		}
+        
+        // Do not check for allTargets areTopologicallyIdenticalToModel here, because
+        // Parts might not be in the same order,
+        // And in our case we just need the ONE morphed part vertex count to match.
+        
 		let vertexCount = model.positionCounts.flatMap { $0 }.reduce(0, +)
+        
 		let maxElements = Self.maxTextureWidth * Self.maxTextureWidth
+        
 		guard vertexCount * targets.count * 2 <= maxElements else {
 			throw Error.tooMuchGeometry
 		}
+        
 		self.weights = weights
+        
 		currentWeights = weights.values
+        
 		var texResources: [TextureResource] = []
 
-		// Because we have no "submesh index" or "part index" within the geometry modifier, each part of the mesh needs to have its own material, where in the original model they might have shared materials
-		var updatedContents = MeshResource.Contents()
-		updatedContents.instances = model.mesh.contents.instances
-		var updatedMaterials: [CustomMaterial] = []
+        var updatedMaterials = model.materials
+        
 		let geometryModifier = MorphEnvironment.shared.morphGeometryModifiers[targets.count - 1]
 		
-		updatedContents.models = try MeshModelCollection(model.mesh.contents.models.enumerated().map { (submodelId, submodel) in
-			try MeshResource.Model(id: submodel.id, parts: submodel.parts.enumerated().map { (partId, part) in
-				let material = model.materials[part.materialIndex]
-				
-				var updatedMaterial = if options.contains(.debugNormals) {
-					try CustomMaterial(surfaceShader: MorphEnvironment.shared.debugShader, geometryModifier: geometryModifier, lightingModel: .clearcoat)
-				} else {
-					try CustomMaterial(from: material, geometryModifier: geometryModifier)
-				}
-				let targetParts: [MeshResource.Part] = targets.map {
-					$0.mesh.contents.models.map { $0 }[submodelId]
-						.parts.map { $0 }[partId]
-				}
-				let vertCountForPart = part.positions.count
-				let textureResource = try Self.createTextureForPart(part, targetParts: targetParts, vertCount: vertCountForPart)
-				texResources.append(textureResource)
-				updatedMaterial.custom.texture = CustomMaterial.Texture(textureResource)
-				updatedMaterial.custom.value = weights.values
-				let materialIndex = updatedMaterials.count
-				updatedMaterials.append(updatedMaterial)
-				var newPart = part
-				newPart.materialIndex = materialIndex
-				return newPart
-			})
-		})
+        for submodel in model.mesh.contents.models {
+            
+            guard submodel.id.contains(Self.morphPartID) else { continue }
+            
+            for (partIndex, part) in submodel.parts.enumerated() {
+                let material = model.materials[part.materialIndex]
+                
+                var updatedMaterial = if options.contains(.debugNormals) {
+                    try CustomMaterial(surfaceShader: MorphEnvironment.shared.debugShader, geometryModifier: geometryModifier, lightingModel: .clearcoat)
+                } else {
+                    try CustomMaterial(from: material, geometryModifier: geometryModifier)
+                }
+                let targetParts: [MeshResource.Part] = targets.map {
+                    
+                    let modelsArray = $0.mesh.contents.models.map { $0 }
+                    guard let bodyModel =  modelsArray.filter({$0.id.contains(Self.morphPartID)}).first else {
+                        assertionFailure("No matching body part")
+                        return modelsArray[0].parts.map { $0 }[0]
+                    }
+                    
+                    return bodyModel.parts.map { $0 }[partIndex]
+                }
+                let vertCountForPart = part.positions.count
+                
+                for targetPart in targetParts {
+                    // In our case we just need the ONE morphed part vertex count to match.
+                    guard targetPart.positions.count == vertCountForPart else {
+                        
+                        for pair in model.namedPositionCounts {
+                            print(pair)
+                        }
+                        print()
+                        for target in targets {
+                            for pair in target.namedPositionCounts {
+                                print(pair)
+                            }
+                        }
+                        
+                        throw Error.targetsNotTopologicallyIdentical
+                    }
+                }
+
+                let textureResource = try Self.createTextureForPart(part, targetParts: targetParts, vertCount: vertCountForPart)
+                texResources.append(textureResource)
+                updatedMaterial.custom.texture = CustomMaterial.Texture(textureResource)
+                updatedMaterial.custom.value = weights.values
+                updatedMaterials[part.materialIndex] = updatedMaterial
+            }
+        }
+
 		self.textureResources = texResources
-		let updatedMesh = try MeshResource.generate(from: updatedContents)
+        
 		model.materials = updatedMaterials
+        /*
+         !! Removes armature
+         let updatedMesh = try MeshResource.generate(from: updatedContents)
 		model.mesh = updatedMesh
+         */
 		entity.components.set(model)
 	}
 	
@@ -208,6 +247,18 @@ private extension ModelComponent {
 			}
 		}
 	}
+
+    var namedPositionCounts: [String: [Int]] {
+        var mapping = [String: [Int]]()
+        let _ = mesh.contents.models.map { model in
+            var modelID = model.id.components(separatedBy: "/").last ?? "model"
+            modelID = modelID.replacingOccurrences(of: "_Target", with: "")
+            mapping[modelID] = model.parts.map { part in
+                part.positions.count
+            }
+        }
+        return mapping
+    }
 }
 
 private extension MeshBuffer where Element == SIMD3<Float> {
