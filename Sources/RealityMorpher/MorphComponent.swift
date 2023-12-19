@@ -8,7 +8,7 @@ import SwiftUI
 /// Add this component to a `ModelEntity` to enable morph target (AKA shape key or blend shape) animations.
 public struct MorphComponent: Component {
     
-    private static var morphPartID = "BODY"
+    private var morphPartID: String
     
 	/// Debug options
 	public enum Option: String {
@@ -37,11 +37,18 @@ public struct MorphComponent: Component {
 	///   - options: a set of ``Option`` flags that can be passed, Defaults to an empty set.
 	///
 	/// - Throws: See ``Error`` for errors thrown from this initialiser
-	public init(entity: HasModel, targets: [ModelComponent], weights: MorphWeights = .zero, options: Set<Option> = []) throws {
+	public init(entity: HasModel,
+                morphPartID: String,
+                targets: [ModelComponent],
+                weights: MorphWeights = .zero,
+                options: Set<Option> = []) throws {
         
 		guard var model = entity.model else { throw Error.missingBaseMesh }
         
 		guard 1...MorphEnvironment.maxTargetCount ~= targets.count else { throw Error.invalidNumberOfTargets }
+        
+        let morphPartID = morphPartID.lowercased()
+        self.morphPartID = morphPartID
         
         // Do not check for allTargets areTopologicallyIdenticalToModel here, because
         // Parts might not be in the same order,
@@ -67,7 +74,7 @@ public struct MorphComponent: Component {
 		
         for submodel in model.mesh.contents.models {
             
-            guard submodel.id.contains(Self.morphPartID) else { continue }
+            guard submodel.id.lowercased().contains(morphPartID) else { continue }
             
             for (partIndex, part) in submodel.parts.enumerated() {
                 let material = model.materials[part.materialIndex]
@@ -80,7 +87,7 @@ public struct MorphComponent: Component {
                 let targetParts: [MeshResource.Part] = targets.map {
                     
                     let modelsArray = $0.mesh.contents.models.map { $0 }
-                    guard let bodyModel =  modelsArray.filter({$0.id.contains(Self.morphPartID)}).first else {
+                    guard let bodyModel =  modelsArray.filter({$0.id.lowercased().contains(morphPartID)}).first else {
                         assertionFailure("No matching body part")
                         return modelsArray[0].parts.map { $0 }[0]
                     }
@@ -129,13 +136,19 @@ public struct MorphComponent: Component {
 	/// Create texture from part positions & normals
 	static private func createTextureForPart(_ base: MeshResource.Part, targetParts: [MeshResource.Part], vertCount: Int) throws -> TextureResource {
 		let positions: [Float] = targetParts.flatMap(\.positions.flattenedElements)
+        
 		let basePositions: [Float] = Array(repeating: base.positions.flattenedElements, count: targetParts.count).flatMap { $0 }
+        
 		let offsets: [Float] = vDSP.subtract(positions, basePositions)
+        
 		let normals: [Float] = targetParts.flatMap {
 			$0.normals?.flattenedElements ?? []
 		}
+        
 		guard positions.count == normals.count else { throw Error.positionsCountNotEqualToNormalsCount }
+        
 		let targetCount = targetParts.count
+        
 		let elements = (0..<vertCount).flatMap { vertId in
 			(0..<targetCount).flatMap { targetId in
 				let elementId = ((targetId * vertCount) + vertId) * 3
@@ -143,19 +156,31 @@ public struct MorphComponent: Component {
 				return offsets[vertRange] + normals[vertRange]
 			}
 		}.map { Float16($0) }
+        
 		let pixelcount = elements.count / 3
+        
 		let width = min(vertCount, maxTextureWidth)
+        
 		let (quotient, remainder) = pixelcount.quotientAndRemainder(dividingBy: width)
+        
 		let height = remainder == 0 ? quotient : quotient + 1
+        
 		let finalPadding = Array(repeating: Float16.zero, count: (width - remainder) * 3)
+        
 		let elementsWithPadding = elements + finalPadding
+        
 		let data = elementsWithPadding.withUnsafeBytes {
 			Data($0)
 		} as CFData
+        
 		let bitmapInfo: CGBitmapInfo = [.byteOrder16Little, .floatComponents]
+        
 		let bitsPerComponent = 16
+        
 		let bitsPerPixel = bitsPerComponent * 3
+        
 		let bytesPerPixel = bitsPerPixel / 8
+        
 		guard let provider = CGDataProvider(data: data),
 			  let image = CGImage(width: width, height: height, bitsPerComponent: bitsPerComponent, bitsPerPixel: bitsPerPixel, bytesPerRow: width * bytesPerPixel, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: bitmapInfo, provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
 		else {
