@@ -20,7 +20,7 @@ final class MorphComponentTests: XCTestCase {
 		// target1 is a unit plane, but on XY
 		let target1 = ModelComponent(mesh: .generatePlane(width: 1, height: 1), materials: [material])
 		
-		let sut = try MorphComponent(entity: base, targets: [target, target1])
+        let sut = try MorphComponent(entity: base, morphPartID: "mouth", targets: [target, target1])
 		let texture = try XCTUnwrap(sut.textureResources.first)
 		XCTAssertEqual(texture.width, 4)
 		XCTAssertEqual(texture.height, 4) // positions & normals for 2 targets
@@ -56,7 +56,7 @@ final class MorphComponentTests: XCTestCase {
 		let base = ModelEntity(mesh: try largeMesh(vertCount: maxWidth + 1, ramp: 0...100), materials: [material])
 		// all positions in target are offset by [1, 1, 1]
 		let target = ModelComponent(mesh: try largeMesh(vertCount: maxWidth + 1, ramp: 1...101), materials: [material])
-		let sut = try MorphComponent(entity: base, targets: [target])
+		let sut = try MorphComponent(entity: base, morphPartID: "mouth", targets: [target])
 		
 		let texture = try XCTUnwrap(sut.textureResources.first)
 		XCTAssertEqual(texture.width, maxWidth)
@@ -70,7 +70,7 @@ final class MorphComponentTests: XCTestCase {
 		let material = SimpleMaterial()
 		let base = ModelEntity(mesh: .generatePlane(width: 1, depth: 1),materials: [material])
 		let target = ModelComponent(mesh: .generatePlane(width: 3, depth: 1), materials: [material])
-		var sut = try MorphComponent(entity: base, targets: [target])
+		var sut = try MorphComponent(entity: base, morphPartID: "mouth", targets: [target])
 		if #available(iOS 17.0, macOS 14.0, *) {
 			sut.setTargetWeights([1], animation: .cubic(duration: 2))
 		} else {
@@ -91,7 +91,7 @@ final class MorphComponentTests: XCTestCase {
 		let base = ModelEntity(mesh: .generatePlane(width: 1, depth: 1),materials: [material])
 		let target = ModelComponent(mesh: .generatePlane(width: 1, depth: 1, cornerRadius: 0.1), materials: [material])
 		do {
-			let _ = try MorphComponent(entity: base, targets: [target])
+			let _ = try MorphComponent(entity: base, morphPartID: "mouth", targets: [target])
 			XCTFail()
 		} catch let error as MorphComponent.Error {
 			XCTAssertEqual(error, .targetsNotTopologicallyIdentical)
@@ -115,7 +115,7 @@ final class MorphComponentTests: XCTestCase {
 		})
 		let targetNoNormals = ModelComponent(mesh: try MeshResource.generate(from: updatedContents), materials: target.materials)
 		do {
-			let _ = try MorphComponent(entity: base, targets: [targetNoNormals])
+			let _ = try MorphComponent(entity: base, morphPartID: "mouth", targets: [targetNoNormals])
 			XCTFail()
 		} catch let error as MorphComponent.Error {
 			XCTAssertEqual(error, .positionsCountNotEqualToNormalsCount)
@@ -127,7 +127,7 @@ final class MorphComponentTests: XCTestCase {
 		let material = SimpleMaterial()
 		let target = ModelComponent(mesh: .generatePlane(width: 1, depth: 1, cornerRadius: 0.1), materials: [material])
 		do {
-			let _ = try MorphComponent(entity: base, targets: [target])
+			let _ = try MorphComponent(entity: base, morphPartID: "mouth", targets: [target])
 			XCTFail()
 		} catch let error as MorphComponent.Error {
 			XCTAssertEqual(error, .missingBaseMesh)
@@ -138,7 +138,7 @@ final class MorphComponentTests: XCTestCase {
 		let material = SimpleMaterial()
 		let base = ModelEntity(mesh: .generatePlane(width: 1, depth: 1),materials: [material])
 		do {
-			let _ = try MorphComponent(entity: base, targets: [])
+			let _ = try MorphComponent(entity: base, morphPartID: "mouth", targets: [])
 			XCTFail()
 		} catch let error as MorphComponent.Error {
 			XCTAssertEqual(error, .invalidNumberOfTargets)
@@ -150,7 +150,7 @@ final class MorphComponentTests: XCTestCase {
 		let base = ModelEntity(mesh: .generatePlane(width: 1, depth: 1),materials: [material])
 		let target = ModelComponent(mesh: .generatePlane(width: 1, depth: 1), materials: [material])
 		do {
-			let _ = try MorphComponent(entity: base, targets: [target, target, target, target, target])
+			let _ = try MorphComponent(entity: base, morphPartID: "mouth", targets: [target, target, target, target, target])
 			XCTFail()
 		} catch let error as MorphComponent.Error {
 			XCTAssertEqual(error, .invalidNumberOfTargets)

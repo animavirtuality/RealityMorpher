@@ -53,23 +53,42 @@ struct TimelineAnimator: MorphAnimating {
 }
 
 struct LinearAnimator: MorphAnimating {
-	private var timeElapsed: TimeInterval = .zero
-	private let origin: MorphWeights
-	private let target: MorphWeights
-	private let duration: TimeInterval
-	
-	init(origin: MorphWeights, target: MorphWeights, duration: TimeInterval) {
-		self.origin = origin
-		self.target = target
-		self.duration = duration
-	}
-	
-	mutating func update(with deltaTime: TimeInterval) -> MorphEvent {
-		if timeElapsed >= duration {
-			return MorphEvent(status: .completed, weights: target)
-		}
-		timeElapsed += deltaTime
-		let value = mix(origin.values, target.values, t: Float(timeElapsed / duration))
-		return MorphEvent(status: .running, weights: MorphWeights(values: value))
-	}
+    private var timeElapsed: TimeInterval = .zero
+    private let origin: MorphWeights
+    private let target: MorphWeights
+    private let duration: TimeInterval
+    
+    /// Used for when duration == 0, so that one update loop is run to apply the final weights to the mesh.
+    private var hasUpdated = false
+    
+    init(origin: MorphWeights, target: MorphWeights, duration: TimeInterval) {
+        self.origin = origin
+        self.target = target
+        self.duration = duration
+    }
+    
+    mutating func update(with deltaTime: TimeInterval) -> MorphEvent {
+        if timeElapsed >= duration {
+            
+            if (hasUpdated || duration > 0) {
+                
+                return MorphEvent(status: .completed, weights: target)
+                
+            } else {
+                
+                hasUpdated = true
+                
+                // Perform one update loop to apply the final weights to the mesh.
+                return MorphEvent(status: .running, weights: target)
+            }
+        }
+        
+        timeElapsed += deltaTime
+        
+        let value = mix(origin.values, target.values, t: Float(timeElapsed / duration))
+        
+        if !hasUpdated { hasUpdated = true }
+        
+        return MorphEvent(status: .running, weights: MorphWeights(values: value))
+    }
 }
